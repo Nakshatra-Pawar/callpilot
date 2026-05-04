@@ -1,0 +1,156 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+/**
+ * Rep onboarding — the first-visit "who are you?" gate.
+ *
+ * Philosophy: this stands in for a future auth flow without pretending
+ * to be one. We ask for a name, we store it in localStorage, we carry
+ * it through every surface (top rail chip, agent prompt, authored-by
+ * stamps). No password, no email confirmation, no OAuth dance — the
+ * fiction is "this is YOUR personal CallPilot, signed in for you".
+ *
+ * UX contract:
+ *   - Modal is non-dismissible by outside-click or Escape. The only
+ *     way out is to submit a non-empty name. Dismissing silently
+ *     would leave the app in a weird half-personalized state (agent
+ *     still generic, chip still empty) that's worse than either the
+ *     fully-signed-in or fully-signed-out experiences.
+ *   - Input is auto-focused so the rep can identify themselves and
+ *     move straight into the call workspace.
+ *   - Submit clamps to `.trim()` — leading/trailing whitespace would
+ *     otherwise show up in the monogram and the agent greeting,
+ *     which looks janky.
+ */
+export function RepOnboarding({
+  open,
+  onComplete,
+  defaultName = "",
+}: {
+  open: boolean;
+  onComplete: (name: string) => void;
+  defaultName?: string;
+}) {
+  const [name, setName] = useState(defaultName);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Reset and re-focus whenever the modal re-opens. This matters for
+  // the sign-out → sign-in loop: after signing out, we re-open with
+  // the default pre-filled, not whatever the previous session typed.
+  useEffect(() => {
+    if (!open) return;
+    // Defer to the next tick so the dialog has mounted its input.
+    const id = window.setTimeout(() => {
+      setName(defaultName);
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 50);
+    return () => window.clearTimeout(id);
+  }, [open, defaultName]);
+
+  const trimmed = name.trim();
+  const canSubmit = trimmed.length > 0;
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!canSubmit) return;
+    onComplete(trimmed);
+  };
+
+  return (
+    <Dialog
+      open={open}
+      // Swallow every close intent that isn't an explicit submit.
+      // Radix fires onOpenChange for backdrop click, Escape, and the
+      // close button (there isn't one here) — we want none of those
+      // paths to leave us nameless.
+      onOpenChange={() => {}}
+    >
+      <DialogContent
+        // Prevent the Radix-default Escape-to-close and
+        // pointer-down-outside-to-close behaviors, AND hide the
+        // auto-injected X close button. This dialog is the first-
+        // visit gate — the only way out is a real submit.
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+        showCloseButton={false}
+        className="sm:max-w-md"
+      >
+        {/* Copy contract: the splash behind us is deliberately empty
+         *  — the CallPilot brand mark now lives HERE, inside the card,
+         *  so the modal is the single visual anchor on the pre-auth
+         *  screen. A tiny wordmark + tagline sit above the question
+         *  so the rep immediately sees "yes, this is CallPilot" without
+         *  a second stacked hero. Title is a short question; the
+         *  description adds a touch of texture about what the name
+         *  actually does, so the field doesn't feel like it's asking
+         *  for data with no stated purpose. */}
+        <div
+          aria-hidden="true"
+          className="flex items-center gap-2 text-muted-foreground"
+        >
+          <span
+            className="text-[15px] italic leading-none tracking-tight text-foreground"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            CallPilot
+          </span>
+          <span className="h-1 w-1 rounded-full bg-muted-foreground/40" />
+          <span className="text-[9px] uppercase tracking-[0.22em]">
+            voice-first sales copilot
+          </span>
+        </div>
+
+        <DialogHeader>
+          <DialogTitle>Who&apos;s using CallPilot?</DialogTitle>
+          <DialogDescription>
+            We&apos;ll tune the voice agent to you — greetings by name,
+            notes and tasks stamped as yours.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
+          <label className="flex flex-col gap-2 text-sm">
+            <span className="font-medium text-foreground">Your name</span>
+            <input
+              ref={inputRef}
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Jordan"
+              autoComplete="off"
+              spellCheck={false}
+              aria-label="Your name"
+              maxLength={40}
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm shadow-sm outline-none ring-offset-background transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            />
+            <span className="text-[11px] text-muted-foreground">
+              Stays on this device.
+            </span>
+          </label>
+
+          <DialogFooter>
+            <Button
+              type="submit"
+              disabled={!canSubmit}
+              className="w-full sm:w-auto"
+            >
+              Continue as {trimmed || "…"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
